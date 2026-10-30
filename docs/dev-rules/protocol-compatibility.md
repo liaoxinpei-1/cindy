@@ -16,7 +16,9 @@
 云端伙伴运行时以独立的后台身份 API 接入安装归属 GET/POST `/preferences`、自动主力确认和删除登记重试；
 同路径的资料同步、消息镜像以及用户明确操作继续原通道，不按 URL 一刀切限流。
 
-新端在能力缺失或只读探测 404 时回退原 claim。旧客户端忽略新能力与事件；Mobile 无执行器协议变化。
+新端在能力缺失或只读探测 404 时回退原 claim。服务端同时声明 `personalMask:1` 时也不使用探测：
+AI 代答与私人汇总只能由空闲的 `/mask/executions/claim` 发现，探测与 `work.available` 均不覆盖它们。
+旧客户端忽略新能力与事件；Mobile 无执行器协议变化。
 推荐先部署全部服务端，再发客户端；旧 dispatcher 混合窗口依靠兜底，不承诺即时唤醒。没有环境变量或 Schema 变化。
 actor 游标只保存在当前账号运行时，重连续读、重启从零；RESET_REQUIRED 与 CURSOR_AHEAD 都有恢复入口。
 
@@ -113,6 +115,28 @@ Pi 只改写副本首行的 session ID 与 cwd，使其指向接收端工作目�
 不把目录读取或选模当成执行授权。两端都更新后才具备原生选模回执，不需要服务端变更。
 新增 Renderer IPC 仅本机宿主使用，不进入 device-link 通用 invoke/push 白名单；跨设备
 复用既有插件页面资源与密封设置链。正文详见 [插件规则](plugin-security-and-authoring.md#宿主统一模型选择器新增接口尚未发布)。
+
+## 浏览器扩展桥接迁入宿主
+
+随包浏览器扩展的本机桥接从插件自带的 Node 接线进程迁入宿主（`main/browser-extension/bridge.ts`）。
+线协议 `cindy-browser-extension/3`（协议号 3、签名线合同 0.4.13、回环端口 18810–18819、
+`/health` `/poll` `/ack` `/authorize` `/result` `/learning/*` `/native/bind`）逐字不变：已装的
+扩展 0.3.x / 0.4.x 不用更新即可连到宿主；`/health` 的 `plugin` 字段改为声明插件的 id（Cindy
+Chrome 仍是 `my-browser`）。Native Messaging 的注册文件布局（`<App Support>/Cindy/browser-native/`
+与各浏览器 profile 的 `NativeMessagingHosts/<name>.json`）与插件时期相同，已配对用户升级后无需
+重新配对。
+
+宿主只在已装、启用且 v3 清单声明 `browserExtension` 的插件存在时启动桥接；旧版插件不声明，宿主
+不占端口，插件自带接线进程照旧工作，用户升级宿主不会断连。插件新版声明后由宿主接线，插件停止
+自带监听，交错更新期间两边都写同一份 Native Messaging 清单。管子新增上行 `browser-extension-request`
+与下行事件 `browser-extension-relay`；旧宿主对未知上行类型返回错误，插件须按运行时能力探测降级到
+自带接线进程，不得把拒绝当作已连接。Browser Use 的 `BackendKind` 新增 `user-browser`：旧设置文件
+的 `kind` 原样读取，未知值仍回落 `external`；回退旧版本时该值被当作默认处理，不丢其它偏好。
+
+站点名单已取消（2026-10-30）：线上的 `policy` 字段保留，宿主在 `/ack`、`/authorize` 与 `setPolicy`
+应答里恒给「全部允许」，旧扩展照常解析；旧插件推送的 `setPolicy` 应答成功但不生效；宿主缓存文件
+只保存配对，旧版本存下的名单读到即忽略。事件 `browser-extension-policy-request` 沿用原名，现在只
+在没有配对缓存时用来索要配对。
 
 ## 接受已保存的伙伴模型
 
@@ -324,6 +348,16 @@ stream 匹配后才处理；信令不进入业务可靠 FIFO，也不走直连�
 
 ### 自建中转同步维护
 
+服务器部署的 Nginx 自动接入使用中转 bundle `0.3.0`（`nginx` 为 SSH 部署内部 CLI）。公网仍使用
+原有 HTTPS/WSS 地址、`CindyRelay` 认证、媒体签名地址及 v1 设备协议；不新增跨端帧、能力位或权限。
+已部署 `0.2.0` 的通信行为继续兼容，需要自动配置 Nginx 时由现有升级入口上传新 bundle。
+证书请求的网络重试与临时失败状态随 bundle `0.3.1` 提供；已部署 `0.3.0` 的服务器通过现有升级入口更新程序。
+新增的证书状态 `transient` 为可选字段，旧客户端忽略；新客户端连接旧中转仍沿用原失败处理，线协议与主人身份不变。
+Nginx 后端的 `--trust-proxy` 只对回环连接的单个有效 `X-Forwarded-For` IP 启用配对来源识别，
+部署生成的代理配置必须覆盖该头；直连及默认未信任模式继续按 socket 来源限流，协议不变。
+Desktop/Mobile 继续共用原客户端，无须更改服务端；验证入口见
+[`self-hosted-relay-plan.md §15.3`](../self-hosted-relay-plan.md#153-第-3-步设备签名一键部署到服务器远程管理2026-10-28)。
+
 **硬性要求：凡 Device Link 的改动会影响自建中转，必须在同一次改动中完成必要的同步适配、
 兼容处理与验证。缺少这些内容视为未完成，不得只完成官方中转路径后把自建中转留到后续。**
 
@@ -343,7 +377,6 @@ stream 匹配后才处理；信令不进入业务可靠 FIFO，也不走直连�
 - **交付说明**：PR／交付中写明自建中转的影响、同步修改位置及实际验证结果。若只是官方服务内部
   扩容、数据库或监控调整，或已有通用转发足够支持本次变化，可以写明无需同步修改的具体依据；
   不得仅写「不涉及」或假定官方与自建中转会自动保持一致。
-
 
 ## 灵动岛完成卡操作
 
@@ -1259,6 +1292,21 @@ relay 类型、allowlist 或持久化 schema，服务端无需改动；Mobile �
 Desktop 本地关窗不等待远端停止回执，后台清理只作用于原 peer / lease，不重置共享链路。
 此扩展沿用已有业务通道，不改变 relay、服务端协议或权限范围。
 
+## 远程桌面闲置锁屏
+
+能力 `idleLock?: boolean` 仅在被控端有原生锁屏能力时声明。新版控制端仅对该能力为真的
+整桌面连接发送 `start` / `heartbeat.idleTimeoutMinutes`，枚举为 0、1、5、10、15、30；
+0 为永不，缺省字段保持旧端行为。控制端本地默认 5 分钟，按电脑持久化 override。
+代输入窗口不协商该能力；旧被控端不显示为已受保护。字段走现有请求解析与鉴权，
+官方与自建 relay 均透明转发，不增加新通道或服务端状态。
+
+被控端按单调时间计时，真实输入与手动剪贴板动作续期，心跳、视频与自动同步不续期。
+闲置到期返回 `DESKTOP_IDLE_TIMEOUT` 并锁屏断开；控制端将其视为终态，只有显式 start
+可恢复。开启闲置保护的连接失联也锁屏，阻止自动 resume。短暂媒体恢复仅撤销控制端
+本地状态、保留有界的被控端 lease，由 resume 保留原倒计时；恢复失败仍在现有 12 秒
+心跳到期处锁屏。不扩展其他 Device Link 通道的故障范围，不因远程桌面结束而断开整条链路。
+普通显式 stop 仍保留旧语义；本机锁屏/睡眠与受保护手机退后台使用已有 stop.lockScreen。
+
 ## 远程桌面临时分辨率
 
 被控端以可选能力 `resolutionRestore` 声明系统分辨率的连接级恢复支持。
@@ -1669,6 +1717,36 @@ handler 无 sender 依赖；不加入共享任务访客白名单，不进入自�
 
 ## 远程 Agent：Agent 在另一台电脑运行
 
+直连分享任务的授权失效与进程重启分开处理：M 仍有该 run 但其任务许可已失效时，poll 只返回
+既有 `closed/access-revoked` 终态，不读取该 run 缓冲的内容，也不再返回 `missing`。新旧控制端
+都按终态关闭；真正不存在的 run 仍用 `missing`。本机两分钟断链宽限同时识别直连 Error.code
+的 `ACCESS_REVOKED`（即使显示摘要包装为 `REMOTE_AGENT_UNAVAILABLE`）；只有已在断链窗口内
+且仍持有效本机租约的任务才可请 O 为原 M 重新授权，首次撤权、明确终态与租约到期不触发恢复。
+不新增 wire 字段、错误码或授权能力；O、M 和服务端仍逐次决定许可。旧控制端保持原行为。
+
+
+供应商分享 `allocate` 成功响应可选追加 `leaseDurationMs`，由 O 在回复前按服务端已批准期限计算
+剩余毫秒，最大 30 分钟，不是给 G 重新批准一次完整许可。G 从请求发出时的单调时钟保守计时，
+新建和恢复任务都使用该期限；续权成功才替换期限。到期只结束该任务的本地执行资源，远端 close
+无法交付也不等待普通断链的两分钟重试；不关闭共享 WebSocket、不重放请求、不换执行电脑。
+旧 G 忽略新增字段；旧 O 缺字段时新 G 沿用原 30 分钟合同，M 仍为最终许可闸门。
+字段存在但无效时拒绝把它用作任务授权；此增量不更改 `maker:remote-agent:v1` 或服务端请求格式。
+
+供应商退出期间的恢复（2026-10-29）沿用 v1 与既有字符串 `closed.reason`，不加必填字段、
+能力位或 relay 接口。新 host 的空闲 run 使用旧控制端已认识的 `ended + idleReclaimed`，旧端静默
+收尾、新端保留本机部分；忙碌 run 用 `provider-restarting`，旧端仍走原有错误恢复，不劣于原来的
+`aborted`。新版 host 的主动断开（`user` / `toggle-off`）使用 `controller-disconnected`，
+新控制端按用户撤销结束，供应商组也不自动换电脑；旧控制端按未知原因走原可见错误。
+`dropAllControllers('shutdown')` 把既有 teardown 值 `app-quit` 传给 host，与 `dispose()`
+共用退出处理；两者重叠时等首次收尾写完，后来的 dispose 不得覆盖主动断开的原因。
+新控制端保留 `aborted` **仅为兼容旧 host**：旧 host 的退出和主动断开没有可区分的字段／能力位，
+因此旧端一键断开也可能自动接回一次；旧端关闭远程控制时重连被拒，最终显示错误。不能把这个
+兼容取舍误用于新版 host。重启后 `poll.missing` 仍是兜底；首次打开即消失、本机主动关闭和
+superseded 不自动复活。重开仍使用既有 `resumeSessionId` 与权限检查，运行中
+中断后的自动续跑拒绝原生会话 ID 不匹配，不自动接受空白新会话。中间层照常透传字符串原因。
+自动动作沿用 `autoResumeInfo.agentReconnect`，桌面和手机无需新增显示协议。
+回归见 Desktop `connectionPool.test.ts`、`hostLifecycle.test.ts`、`poll.test.ts`。
+
 共享模型分叉追加 `caps.nativeFork: true` 与 `op: fork`，仍使用
 `maker:remote-agent:v1`，不改变 relay、版本号或服务端。控制端先协商能力；旧运行端
 缺少能力时明确提示更新，不把历史复制成没有原生上下文的本地任务。旧控制端忽略新增能力。
@@ -1768,8 +1846,22 @@ Codex 原生图片恢复（#6412）在既有 `maker:remote-agent:v1` 上追加�
   映射为本机路径(绝对 glob 里本机目录名按字面转义)；不在其中的是 B 自己的目录(如它的 Codex 记忆目录)，读写
   授权丢弃，只收不放；禁止规则不因转换失效：路径条目在 A 上也是合法绝对路径时原样保留，没映射上的禁止 glob
   一律原样保留；用户目录对不上时换成 A 本机的(Codex 缺了它会把 `~/…` 规则当解析失败、一律拒绝读取)；
-  `file:///C:/…` 是否为盘符按 B 的路径约定(虚拟工作区路径)判断；网络与 Windows 沙箱档位不动。原样转发时
-  两端系统不同会被 A 的 exec-server 拒绝(`invalid sandbox permission path URI`)。
+  `file:///C:/…` 是否为盘符按 B 的路径约定(虚拟工作区路径)判断；网络配置按原值透传。Windows 沙箱档位通常
+  保持原值；唯一例外是在已有虚拟映射、Agent 路径为 POSIX、本机执行端为 Windows、`permissions.type=managed`
+  且 `windowsSandboxLevel=disabled` 时，选择本机 `restricted-token`，见[远程适配规则](remote-and-mobile-adaptation.md)。
+  显式 Windows 选择、非受限请求与无虚拟映射的 legacy 分支不改；原生实现无法落实限制时仍拒绝，不删规则或转无沙箱。
+  原样转发时两端系统不同可能被 A 的 exec-server 拒绝(`invalid sandbox permission path URI`)。
+- **Codex 启动清单批量探测（2026-10-29）**：B 在单条 exec-server 连接启动时，把首个插件清单所在
+  目录及其祖先的三种清单检查提前发送（最多 64 层／192 条）。全部仍是旧协议支持的普通
+  `fs/getMetadata`，使用独立字符串 ID，保留原 params/sandbox，经 A 的原路径映射和原生执行器；
+  不添加 wire 字段、方法、IPC、权限或能力协商。只有原生 NotFound 可在本次启动复用，已有文件、
+  权限错误、未知目标和不同 sandbox 回落原查询。启动结束或写入／进程启动即停止复用，连接关闭清理；
+  迟到内部回复仅在本连接消费，不重放写操作、不重置 peer/relay、不影响其它任务。
+  新 B 配旧 A 可直接使用；旧 B 保持串行。供应商组与自建中转只转发既有不透明 ws 数据及有界
+  poll/push 批次，不解析内部 JSON-RPC ID，因此无需中转、服务端或 Mobile 同步修改，
+  帧大小、鉴权、签名、ACK 和恢复策略不变。回归为 `execServerStartupBatch.test.ts`、
+  `startupProbe.e2e.test.ts`、`mirror.test.ts`、`groupRelay.test.ts` 与 `hostLifecycle.test.ts`；
+  真实跨系统及线上分享运行端尚未验收，性能数据与复跑命令见远程适配文档。
 - **影子目录与配置同步**：`open` 载荷除项目说明文件(含 `.claude/CLAUDE.md`、`.claude/rules`、
   `.codex/skills`)外还带 `ancestorFiles`(项目上级目录里的
   `CLAUDE.md` / `CLAUDE.local.md` / `AGENTS.md` / `AGENTS.override.md`，按层级 `up`，最多 24 级)与
@@ -3196,7 +3288,6 @@ PC 同源 ghostPermissionItems 声明摘要投影并排除 tool，以请求 loca
 空数组仅表示 Host 明确投影的声明为空。工具、about 和 version 使用原字段。
 不增加 channel、allowlist、relay 帧、授权或协议版本，服务端无改动，Mobile 指纹不变。
 
-
 ## 移动插件 Details 事实
 
 同一 plugin-capabilities.data 可选追加 details（key/title/value 数组），由本插件 InstalledGhost
@@ -3206,7 +3297,6 @@ PC 同源 ghostPermissionItems 声明摘要投影并排除 tool，以请求 loca
 当前 PC 窗口的停靠位置不在此声明投影内，有面板只报告存在，无面板沿用 PC 文案。
 旧 Host 缺字段时新手机仅显示原有 Version 与资源 Identifier，说明其余数据未提供；旧控制端忽略新增字段。
 服务端、relay、协议版本及原生 fingerprint 均不变。
-
 
 ## 同账号远程插件管理
 
@@ -3805,7 +3895,6 @@ Share Server 在创建时保存已验签的分享者 `membershipId` 与身份权
 
 方形 SVG 为 1080×1080，Desktop PNG 为 2160×2160，接收界限 1 MiB。素材用于人工复制/保存；网页只展示与承接，不提供发送面板工具。`cindy://plugin/:pluginId` 仍只导航，拒绝 query/fragment/安装参数，沿冷启动、登录恢复、兼容包选择和原安装批准。通用市场详情入口接受服务端解析后的当前区域 ID，再与当前可见目录核对身份及发布；新旧 ID 映射仍归 Plugin Server，分享层不新增转换。已有目录 ID 的请求仍严格绑定原条目，不能借规范化跳到其他插件。不扩 device-link 或 Mobile 能力，没有“我的分享”、移除已发署名、分享统计、转发链、平台 SDK 或资料快照。
 
-
 本版分享接收限于插件页选择本机且目录正常的情况；不承接远程电脑的分享导航或断线恢复，不自动切换所选电脑。组织目录不可用时继续遵守未下发条目不读取详情的既有限制；历史或跨区域公开编号的解析也可能被该限制拒绝，本版不新增解析入口或放宽访问边界。
 
 ## 本地插件按次分享
@@ -3948,7 +4037,6 @@ changing their wire protocol or triggering any companion merge. Identity is cach
 清空普通任务；撤权沿原处理路径上报。设备／状态代次失效时丢弃迟到回复，保留其它设备的
 镜像，不重启链路或重新授权。离线镜像仅保存归属的 id/role/channel，恢复时仍可筛选和显示头像。
 
-
 Mobile follows the same read-only compatibility path for teammate task attribution and independent
 routine/channel Sessions. `taskTeammate` is a client-local display projection (ID/name/avatar), not a
 new wire field or permission. Its slim home cache keeps it with `companion`; optional read failure
@@ -3999,3 +4087,38 @@ contacts 在每次 begin 投递前核对原元素仍连接、仍声明 contacts�
 旧接收端仍可能丢弃核实状态或把接收回复标成私密；完整修复需要执行交接的宿主升级。
 账号、群与 IM 发言人校验、权限档、Plan、输入代次和撤销校验保持不变。
 不改变连接恢复或重放策略；单次派发失败只影响该请求，不重启连接或扩大设备访问。
+
+## Telegram 群历史按消息号取图（2026-10-29）
+
+`GroupMessagePayload.imageRefs` 为可选字段，最多 4 个 `{fileId, name, mimeType,
+downloadToken?}`；无此字段的旧包继续接受，旧客户端忽略新增字段。客户端与服务端
+`@cindy/slack-hook-protocol` 同步边界校验（ID 1024、名称 256、证明 8192 字符；图片类型白名单）。
+官方 relay 对每个接收设备绑定签发 HMAC 图片证明，绑定群、话题、消息与文件身份。
+新增只读 `POST /telegram/group-image` 使用正常桌面登录 JWT 验签，不接受调用者提供设备 ID；
+下载前后核对当前绑定。证明不能单独访问接口，不新增 env、WS envelope 或 capability。
+
+先部署 telegram-hook-server，再更新客户端（用户确认更新，不能强更）。旧端保持文字
+历史，旧服务不发送证明时新端明确不可取回。客户端新增 nullable `image_refs` 数据库列，
+通过追加 Drizzle migration 升级；服务端不持久化群图片或消息正文，无服务端数据库迁移。
+验收入口为 groupHistoryMcpServer / groupHistorySearch / groupHistoryImages、个人 TelegramIM、
+两端 protocol-group-relay 和服务端 telegramController / groupImageHttp 测试；正式 Telegram
+跨进程收发需部署后另验。
+
+同一取图工具覆盖飞书/Lark、企业微信、钉钉、Discord 私聊与个人微信。前三方无历史
+接口的路径仅保存已收到的托管媒体引用，不接受模型提供的路径/URL，不补抓全量群图。
+飞书/Lark 通过该 bot 的消息接口校验精确 chat/topic 后下载；企业微信/钉钉仍只看到
+渠道实际投递的消息，Discord/微信当前只支持私聊。微信排队 payload 追加 optional
+`platformMessageId`，旧队列无此字段时正常执行，但不把内部 task ID 冒充平台消息号。
+
+Slack 复用既有 user-token 工具网关，在 `listTools` 增加 `cindy_get_message_images`；
+参数为 channel_id/message_ts/可选 thread_ts，返回标准 MCP image blocks。客户端网关
+透传图片，不再将 base64 当成文字 JSON 泄洪；旧端仍按原方式交付 JSON，需升级客户端
+才能直接看图。Slack 权限继续由原绑定用户的 Slack 授权决定，无新增 scope/env。
+
+X 属于公开帖子接入，本轮不新增付费历史抓取；其已有推文上下文自动带图路径不变。
+
+## 伙伴列表的可选活动摘要
+
+RemoteResourceDisplay 与 BotGroupSummary 可选携带 `teammateActivity: { phase }`。宿主从现有运行、待确认、完成、错误状态投影，Desktop/iOS/Android 共用状态优先级。生成文案、确认权限、已读回执均保持原有路径。旧控制端忽略字段；新控制端连接旧宿主时回退已有 generation、确认快照及普通未读，不把缺失状态推断成完成。
+
+字段位于现有 Remote Resource 的业务 payload 内，不改握手、签名、顶层帧、relay 路由或重连逻辑；官方与自建中转都沿用通用加密转发，无需中转升级。群直连复用现有 executions/plans 只读接口，不修改服务端；旧服务器缺少接口时保留普通列表。
