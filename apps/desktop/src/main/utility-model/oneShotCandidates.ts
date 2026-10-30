@@ -145,6 +145,12 @@ export type UtilityTextRequestOptions = {
   responseInstructions?: string;
   /** Reject unusable output before selecting a winner, so the configured chain can continue. */
   validateResponse?: (text: string) => boolean;
+  /**
+   * Treat a reply that stopped at the output-length limit as a failed attempt,
+   * so the chain continues instead of returning a silently cut-off text. Only
+   * HTTP routes report this; the Codex host sends no output limit.
+   */
+  rejectTruncated?: boolean;
   /** Final ownership/config guard immediately before an explicit HTTP dispatch. */
   beforeDispatch?: (route: UtilityTextDispatchRoute) => Promise<boolean>;
   /** 显式任务来源；存在时禁止跨来源 fallback。 */
@@ -1026,6 +1032,7 @@ async function requestExplicitProviderText(
       onText: opts.onText,
       responseInstructions: opts.responseInstructions,
       validateResponse: opts.validateResponse,
+      rejectTruncated: opts.rejectTruncated,
       beforeDispatch: opts.beforeDispatch,
       routeStillCurrent,
     });
@@ -1141,6 +1148,7 @@ async function requestExplicitProviderText(
         systemPrompt: requestOpts?.systemPrompt,
         onText: requestOpts?.onText,
         responseInstructions: requestOpts?.responseInstructions,
+        rejectTruncated: requestOpts?.rejectTruncated,
         beforeDispatch: requestOpts?.beforeDispatch
           ? () => requestOpts.beforeDispatch!({ providerId: provider.id, agentKind, model })
           : undefined,
@@ -1218,6 +1226,7 @@ async function requestBuiltinProviderText(
     onText?: (text: string) => void;
     responseInstructions?: string;
     validateResponse?: (text: string) => boolean;
+    rejectTruncated?: boolean;
     beforeDispatch?: (route: UtilityTextDispatchRoute) => Promise<boolean>;
     routeStillCurrent?: () => boolean;
   },
@@ -1313,6 +1322,7 @@ async function requestBuiltinProviderText(
         systemPrompt: requestOpts?.systemPrompt,
         onText: requestOpts?.onText,
         responseInstructions: requestOpts?.responseInstructions,
+        rejectTruncated: requestOpts?.rejectTruncated,
         beforeDispatch: requestOpts?.beforeDispatch
           ? () => requestOpts.beforeDispatch!({
               providerId: input.provider.id,
@@ -1398,6 +1408,7 @@ async function requestBuiltinProviderText(
         systemPrompt: requestOpts?.systemPrompt,
         onText: requestOpts?.onText,
         responseInstructions: requestOpts?.responseInstructions,
+        rejectTruncated: requestOpts?.rejectTruncated,
         beforeDispatch: requestOpts?.beforeDispatch
           ? () => requestOpts.beforeDispatch!({
               providerId: input.provider.id,
@@ -1452,6 +1463,7 @@ async function requestBuiltinProviderText(
         systemPrompt: requestOpts?.systemPrompt,
         onText: requestOpts?.onText,
         responseInstructions: requestOpts?.responseInstructions,
+        rejectTruncated: requestOpts?.rejectTruncated,
         beforeDispatch: requestOpts?.beforeDispatch
           ? () => requestOpts.beforeDispatch!({
               providerId: input.provider.id,
@@ -1605,6 +1617,7 @@ function resolveLiteLlmCandidate(profile: UtilityModelProfile): UtilityTextCandi
         systemPrompt: opts?.systemPrompt,
         onText: opts?.onText,
         responseInstructions: opts?.responseInstructions,
+        rejectTruncated: opts?.rejectTruncated,
         beforeDispatch: opts?.beforeDispatch
           ? () => opts.beforeDispatch!({
             providerId: utilityProfileRouteProviderId(profile),
@@ -1631,6 +1644,7 @@ async function requestLiteLlmText(input: {
   systemPrompt?: string;
   onText?: (text: string) => void;
   responseInstructions?: string;
+  rejectTruncated?: boolean;
   /** Async final dispatch fence, including owner/settings checks. */
   beforeDispatch?: () => Promise<boolean>;
   /** Synchronous owner entitlement fence immediately before the HTTP request. */
@@ -1715,6 +1729,10 @@ async function requestLiteLlmText(input: {
     if (!text) {
       log.warn('utility text chat-completions empty content', chatCompletionEmptyFingerprint(parsed));
       throw new UtilityTextExecutionError({ reason: 'empty_response' });
+    }
+    if (input.rejectTruncated && outputBudgetExhausted('chat-completions', parsed)) {
+      log.warn('utility text reply stopped at the output limit', { model: input.model });
+      throw new UtilityTextExecutionError({ reason: 'request_failed' });
     }
     return text;
   } catch (error) {
@@ -1832,6 +1850,7 @@ async function requestProviderHttpText(input: {
   onText?: (text: string) => void;
   /** Additional output-shape instructions. */
   responseInstructions?: string;
+  rejectTruncated?: boolean;
   /** Session/owner/config guard, evaluated immediately before each HTTP dispatch. */
   beforeDispatch?: () => Promise<boolean>;
   /** Re-read the credential captured by the request closure after the async guard. */
@@ -2072,6 +2091,10 @@ async function requestProviderHttpText(input: {
         log.warn('utility text chat-completions empty content', chatCompletionEmptyFingerprint(parsed));
       }
       throw new UtilityTextExecutionError({ reason: 'empty_response' });
+    }
+    if (input.rejectTruncated && outputBudgetExhausted(step.wire, responseStructure(step.wire, raw))) {
+      log.warn('utility text reply stopped at the output limit', { wire: step.wire, model: targetFor(step).model });
+      throw new UtilityTextExecutionError({ reason: 'request_failed' });
     }
     // A valid response cannot outlive the route or authorization that sent it.
     // Recheck credentials and routing after the complete response, including retries.
@@ -2333,6 +2356,7 @@ async function requestCustomProviderText(input: {
   systemPrompt?: string;
   onText?: (text: string) => void;
   responseInstructions?: string;
+  rejectTruncated?: boolean;
   beforeDispatch?: () => Promise<boolean>;
   credentialStillCurrent?: () => boolean | Promise<boolean>;
   routeStillCurrent?: () => boolean;
@@ -2401,6 +2425,7 @@ async function requestCustomProviderText(input: {
     systemPrompt: input.systemPrompt,
     onText: input.onText,
     responseInstructions: input.responseInstructions,
+    rejectTruncated: input.rejectTruncated,
     beforeDispatch: input.beforeDispatch,
     credentialStillCurrent: input.credentialStillCurrent,
     routeStillCurrent: input.routeStillCurrent,

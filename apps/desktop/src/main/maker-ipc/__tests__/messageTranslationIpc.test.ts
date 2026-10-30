@@ -5,7 +5,7 @@
  * - Bug／规则依据：electron-security-and-process-boundaries.md §5（新 IPC 校验 sender 与 payload）；
  *   翻译只换显示、不得改动代码与 cindy-ui 块（本功能的核心契约）。
  * - 现有覆盖缺口：新增 handler，无既有覆盖。
- * - 最小失败输入：含一个 ``` 代码块的回复，模型返回时漏掉占位符。
+ * - 最小失败输入：含一个 ``` 代码块的回复，模型返回时漏掉占位符；引用内（`> ````）或结尾未闭合的代码块。
  * - tier：unit（进程内 fake 辅助模型）。
  */
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -57,6 +57,21 @@ it('sends prose without code to the model and restores fenced blocks verbatim', 
 it('never shows a translation that lost a protected block', async () => {
   h.request.mockResolvedValue({ ok: true, text: '运行这条命令：然后重启。' });
   expect(await invoke()).toEqual({ ok: false, reason: 'failed' });
+});
+
+// The renderer shows these as code too, so the model must never see their contents.
+it.each([
+  ['inside a quote', ['Run this command:', '', '> ```bash', '> pnpm install # do not translate', '> ```', '', 'Then restart.'].join('\n')],
+  ['left unclosed at the end', ['Run this command:', '', '```bash', 'pnpm install # do not translate'].join('\n')],
+])('protects a code block %s and restores it verbatim', async (_name, text) => {
+  const result = await invoke(text);
+  const [, prompt, opts] = h.request.mock.calls[0];
+  expect(prompt).not.toContain('pnpm install');
+  expect(opts.rejectTruncated).toBe(true);
+  expect(result).toMatchObject({ ok: true });
+  const translated = (result as { text: string }).text;
+  expect(translated).toContain('运行这条命令：');
+  expect(translated).toContain(text.slice(text.indexOf('```')).split('\n\nThen')[0]!);
 });
 
 it('distinguishes a missing auxiliary model from a failed attempt', async () => {

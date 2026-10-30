@@ -18,6 +18,12 @@ it.each([
   ['English in an English UI', 'The build failed because the lockfile is out of date.', 'en', false],
   ['Chinese in an English UI', '构建失败，因为锁文件已过期。', 'en', true],
   ['Korean in a Korean UI', '설정은 다시 시작한 후에 적용됩니다.', 'ko', false],
+  // Same script, different language: the manual entry must stay.
+  ['French in an English UI', 'Le fichier est introuvable.', 'en', true],
+  ['Dutch in an English UI', 'Het bestand is niet gevonden op de server.', 'en', true],
+  ['Chinese in a Japanese UI', '构建失败，因为锁文件已过期。', 'ja', true],
+  ['Japanese in a Japanese UI', 'この設定は再起動後に有効になります。', 'ja', false],
+  ['Chinese prose with an unclosed English code block', '运行下面的命令修复依赖问题：\n```bash\npnpm install --frozen-lockfile # reinstall all of the packages', 'zh-CN', false],
 ] as const)('translation offer for %s', (_name, text, locale, expected) => {
   expect(needsTranslation(text, locale)).toBe(expected);
 });

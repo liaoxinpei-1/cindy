@@ -32,39 +32,61 @@ function scriptOf(char: string): Script | null {
 /** Prose only: code, links and inline literals stay as written and must not decide the language. */
 function proseOf(markdown: string): string {
   return markdown
-    .replace(/^(```|~~~)[^\n]*\n[\s\S]*?^\1[^\n]*$/gm, ' ')
+    // A fence left open at the end of a reply still runs to the end of the text.
+    .replace(/^[ \t>]*(```|~~~)[^\n]*\n[\s\S]*?(?:^[ \t>]*\1[^\n]*$|(?![\s\S]))/gm, ' ')
     .replace(/`[^`\n]*`/g, ' ')
     .replace(/\]\([^)\s]*\)/g, ']')
     .replace(/https?:\/\/\S+/g, ' ');
 }
 
 /**
- * Whether a reply is mostly written in a language other than `locale`, so a
- * translate action is worth offering. Chinese UI accepts either Chinese
- * script variant; Japanese text is recognised by kana, not by kanji alone.
+ * Frequent English words that are not also common words in other Latin-script
+ * languages (so no `a`, `in`, `is`, `no`, `on`, `die`, `was`).
+ */
+const ENGLISH_MARKERS = new Set([
+  'the', 'and', 'of', 'to', 'that', 'this', 'with', 'for', 'you', 'your', 'are', 'be', 'been',
+  'it', 'its', 'not', 'have', 'has', 'will', 'can', 'from', 'by', 'would', 'should', 'there',
+  'which', 'what', 'they', 'we', 'these', 'those', 'because', 'if', 'or', 'but', 'when', 'then',
+]);
+
+function looksEnglish(latinWords: readonly string[]): boolean {
+  const hits = latinWords.filter((word) => ENGLISH_MARKERS.has(word.toLowerCase())).length;
+  return hits >= 2 && hits / latinWords.length >= 0.15;
+}
+
+/**
+ * Whether to offer a translate action for a reply. The entry is hidden only
+ * when the reply is recognisably in the UI language; when that cannot be told
+ * (a Latin-script reply that is not clearly English, Chinese characters
+ * without kana in a Japanese UI, …) the manual entry stays available.
  */
 export function needsTranslation(markdown: string, locale: SupportedLocale): boolean {
   const counts: Record<Script, number> = { han: 0, kana: 0, hangul: 0, latin: 0, cyrillic: 0, other: 0 };
+  const latinWords: string[] = [];
   let total = 0;
   // Latin is counted per word so a Chinese sentence is not outweighed by one English term.
   for (const token of proseOf(markdown).match(/\p{Script=Latin}+|\p{L}/gu) ?? []) {
     const script = scriptOf(token[0]!);
     if (!script) continue;
+    if (script === 'latin') latinWords.push(token);
     counts[script] += 1;
     total += 1;
   }
+  // Nothing worth translating ("OK", a lone emoji or a code-only reply).
   if (total < 3) return false;
   const share = (script: Script) => counts[script] / total;
   switch (locale) {
     case 'zh-CN':
     case 'zh-TW':
-      return counts.kana > 0 || share('han') < 0.5;
+      // Han without kana is Chinese; either script variant stays readable.
+      return !(counts.kana === 0 && share('han') >= 0.5);
     case 'ja':
-      return share('kana') + share('han') < 0.5;
+      // Japanese prose always carries kana; Han alone is more likely Chinese.
+      return !(counts.kana > 0 && share('kana') + share('han') >= 0.5);
     case 'ko':
-      return share('hangul') < 0.5;
+      return !(share('hangul') >= 0.5);
     case 'en':
-      return share('latin') < 0.5;
+      return !(share('latin') >= 0.5 && looksEnglish(latinWords));
   }
 }
 
