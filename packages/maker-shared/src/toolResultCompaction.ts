@@ -108,7 +108,7 @@ export function extractToolResultDiagnostics(content: unknown, unwrapMcp = true)
     outcomeUnknown: data.outcome_unknown,
     effect: data.effect,
     deliveryMode: object(data.delivery).mode,
-    verificationStatus: data.status,
+    verificationStatus: object(object(root.postcheck).data).status ?? data.status,
     observationOk: object(root.observation).ok,
     observationErrorCode: object(root.observation).errorCode,
     afterSnapshotOk: object(root.afterSnapshot).ok,

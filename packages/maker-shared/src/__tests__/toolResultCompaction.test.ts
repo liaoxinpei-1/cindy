@@ -56,6 +56,20 @@ describe('tool result diagnostics', () => {
       verificationStatus: 'unsatisfied', deliveryMode: 'background', observationOk: true });
   });
 
+  // #7985 review: type_text returns explicit assertions inside postcheck, while
+  // the existing fixture only covered a standalone verify_state result (unit).
+  it.each(['satisfied', 'unsatisfied', 'unknown', 'PRIVATE_STATUS'])(
+    'retains only an explicit allowlisted postcheck status: %s', status => {
+      const diagnostics = extractToolResultDiagnostics({
+        ok: true, tool: 'type_text', data: { effect: 'unverifiable' },
+        outcome: { status: 'unknown' },
+        postcheck: { ok: true, tool: 'verify_state', data: { status, message: 'PRIVATE' } },
+      });
+      expect(diagnostics).toEqual({ ok: true, outcome: 'unknown', effect: 'unverifiable',
+        ...(status !== 'PRIVATE_STATUS' ? { verificationStatus: status } : {}) });
+    },
+  );
+
   it('drops private and unrecognized fields when reading a marker', () => {
     const marker = { type: 'tool_result_compacted', version: 1, originalBytes: 200, compactedAt: 1 };
     expect(parseToolResultCompactionMarker({ ...marker, diagnostics: {
