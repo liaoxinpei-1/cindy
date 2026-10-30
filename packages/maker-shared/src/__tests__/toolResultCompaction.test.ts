@@ -70,6 +70,19 @@ describe('tool result diagnostics', () => {
     },
   );
 
+  // #7985: ownership cancellation emits YIELDED, not BUSY. Preserve the stable
+  // reason through both extraction and the shared archive reader (unit).
+  it.each(['DESKTOP_INPUT_BUSY', 'DESKTOP_INPUT_YIELDED'])(
+    'retains the explicit input ownership reason: %s', errorCode => {
+      const diagnostics = extractToolResultDiagnostics({
+        ok: false, errorCode, data: { outcome_unknown: true, message: 'PRIVATE' },
+      });
+      expect(diagnostics).toEqual({ ok: false, errorCode, outcomeUnknown: true });
+      expect(parseToolResultCompactionMarker({ type: 'tool_result_compacted', version: 1,
+        originalBytes: 100, compactedAt: 1, diagnostics })?.diagnostics).toEqual(diagnostics);
+    },
+  );
+
   it('drops private and unrecognized fields when reading a marker', () => {
     const marker = { type: 'tool_result_compacted', version: 1, originalBytes: 200, compactedAt: 1 };
     expect(parseToolResultCompactionMarker({ ...marker, diagnostics: {

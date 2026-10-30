@@ -40,7 +40,7 @@ export function sanitizeToolResultDiagnostics(value: unknown): ToolResultDiagnos
       'INVALID_ARGS', 'UNKNOWN_TOOL', 'COMPUTER_DRIVER_ERROR', 'CUA_UNAVAILABLE',
       'COMPUTER_DRIVER_INCOMPATIBLE', 'STALE_SNAPSHOT', 'SECURE_FIELD',
       'PATH_NOT_ALLOWED', 'REQUEST_CANCELLED', 'ACTION_OUTCOME_UNKNOWN',
-      'POSTCONDITION_NOT_SATISFIED', 'DESKTOP_INPUT_BUSY', 'APP_NOT_INSTALLED',
+      'POSTCONDITION_NOT_SATISFIED', 'DESKTOP_INPUT_BUSY', 'DESKTOP_INPUT_YIELDED', 'APP_NOT_INSTALLED',
       'window_id_not_found', 'window_not_found', 'stale_element_token',
       'screenshot_context_missing', 'capture_expired', 'typed_output_mismatch',
       'background_unavailable', 'browser_consent_required',
