@@ -3517,6 +3517,32 @@ describe('Chat Server result delivery and refresh', () => {
       expect(deps.dispatch).toHaveBeenCalledOnce();
     });
 
+    // A disabled answer marks the registry stale. While re-registration keeps failing, that
+    // companion must not be probed every 2s from the obsolete list; its sibling keeps polling.
+    it('stops probing a companion reported disabled until the registry re-reads it', async () => {
+      const otherBot = '20000000-0000-4000-8000-000000000002';
+      fixture.profiles = [{ id: 'local-bot', displayName: 'Bot', avatar: null, status: 'active' },
+        { id: 'other-bot', displayName: 'Other', avatar: null, status: 'active' }];
+      const base = fixture.handle.getMockImplementation()!;
+      let reads = 0, recovered = false;
+      fixture.handle.mockImplementation((route, method, body) => {
+        if (route === '/me') return { body: { actor: { id: selfId }, capabilities: { workAvailabilityVersion: 1 } } };
+        if (route === '/actors') return ++reads === 1 || recovered ? { body: [{ id: botId, kind: 'bot', externalId: 'local-bot', name: 'Bot' },
+          { id: otherBot, kind: 'bot', externalId: 'other-bot', name: 'Other' }] } : { status: 503, body: { error: { code: 'UNAVAILABLE' } } };
+        if (route === '/executions/availability') return { body: { items: body.botIds.map((id: string) => ({ botId: id, enabled: recovered || id !== botId, pending: false })) } };
+        return base(route, method, body);
+      });
+      const probes = () => fixture.handle.mock.calls.filter(([route]) => route === '/executions/availability').map(([, , body]) => body.botIds as string[]);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(reads).toBeGreaterThan(1);
+      expect(probes().filter(ids => ids.includes(botId))).toHaveLength(1);
+      expect(probes().slice(1).some(ids => ids.includes(otherBot))).toBe(true);
+      // Re-enabled and re-read: the companion is polled again.
+      recovered = true;
+      await vi.advanceTimersByTimeAsync(80_000);
+      expect(probes().filter(ids => ids.includes(botId)).length).toBeGreaterThan(1);
+    });
+
     it('dispatches an independently claimed companion while its discovered sibling claim is still unanswered', async () => {
       const otherBot = '20000000-0000-4000-8000-000000000002';
       fixture.profiles = [{ id: 'local-bot', displayName: 'Bot', avatar: null, status: 'active' },

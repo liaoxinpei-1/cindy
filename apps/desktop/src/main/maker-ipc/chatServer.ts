@@ -403,6 +403,9 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
   let companion: CompanionCloudRuntime | undefined;
   let companionSelf: string | null = null;
   let actorsStale = false;
+  // Companions the server reported disabled are not polled from the cached registry again until
+  // /actors is re-read; a failing re-registration would otherwise repeat the probe every 2s.
+  const disabledUntilRead = new Set<string>();
   let localProfilesRevision = 0, localProfilesRead = 0;
   const unsubscribeProfiles = subscribeBotProfilesChanged(() => {
     actorsStale = true;
@@ -927,7 +930,10 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
       if (Date.now() - profileRefreshedAt > PROFILE_REFRESH_MS) {
         await request('/profile/refresh', 'POST').then(() => { profileRefreshedAt = Date.now(); }).catch(() => undefined);
       }
+      // A report arriving while this read is in flight may postdate it and stays excluded.
+      const reread = [...disabledUntilRead];
       actors = await request<Actor[]>('/actors');
+      for (const actorId of reread) disabledUntilRead.delete(actorId);
       for (const profile of profiles.filter(p => p.status === 'active')) {
         if (actors.some(a => a.kind === 'bot' && a.externalId === profile.id)) continue;
         actors.push(await request<Actor>('/actors', 'POST', { operationId: randomUUID(), kind: 'bot', externalId: profile.id, name: profile.displayName }));
@@ -2610,7 +2616,8 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
   const availabilityResponse = z.object({ items: z.array(z.object({ botId: id, pending: z.boolean(), enabled: z.boolean() })).max(128) });
   const workPolling = createChatWorkPolling<Execution>({
     current, gate: workGate, errorInfo: workError,
-    actors: () => (localProfilesRead === localProfilesRevision ? actors.filter(claimable) : []).map(actor => {
+    actors: () => (localProfilesRead === localProfilesRevision
+      ? actors.filter(actor => claimable(actor) && !disabledUntilRead.has(actor.id)) : []).map(actor => {
       const runs = runsOf(actor.id);
       for (const run of runs) resolveLane(run);
       return { id: actor.id, busy: runs.length > 0, ready: runs.every(run => run.lane) };
@@ -2639,7 +2646,7 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
       void runExecution(execution);
     },
     empty: actorId => { queuedHints.delete(actorId); },
-    disabled: () => { actorsStale = true; },
+    disabled: actorId => { actorsStale = true; disabledUntilRead.add(actorId); },
     failed: (error, phase) => {
       if (error instanceof ChatResponseError && [403, 404].includes(error.status)) actorsStale = true;
       deps.log?.warn('Chat work polling failed', { phase, ...chatErrorDiagnostic(error) });
