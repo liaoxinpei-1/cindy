@@ -1177,6 +1177,9 @@ function createChatServer(local: BotGroupChatService, deps: BotGroupChatServiceD
           void (async () => {
             if (supportsListRemoval) await personalList.resync(api);
             for (const cache of histories.values()) cache.reconnect();
+            // The skipped notices may include actor.changed (a home move): re-read actors and
+            // homes before claiming from the new head. A deferred refresh stays pending for the tick.
+            await refreshHomes('background');
             if (!current() || socket !== ws || ws.readyState !== WebSocket.OPEN) return;
             for (const roomId of rooms.keys()) changed(roomId);
             changed('');

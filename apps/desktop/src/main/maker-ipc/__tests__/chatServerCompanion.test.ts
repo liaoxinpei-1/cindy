@@ -403,6 +403,25 @@ describe('Chat Server cloud companions', () => {
     expect(calls('/executions/claim')).toHaveLength(0);
   });
 
+  // A reset skips the compacted actor.changed that announced a home move; the server only emits
+  // it for home changes. Re-read before claiming from the new head, not after the 60s refresh.
+  it('re-reads companion homes before claiming after an owner event reset', async () => {
+    claimed = true;
+    await vi.advanceTimersByTimeAsync(2000);
+    const socket = fixture.sockets[0]!;
+    Object.defineProperty(socket, 'readyState', { value: 1 });
+    socket.emit('message', JSON.stringify({ type: 'ready' }));
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(host.homes.isHomeHere('local-bot')).toBe(true);
+    home = 'laptop';
+    const before = calls('/executions/claim').length;
+    socket.emit('message', JSON.stringify({ type: 'scope_error', scope: `actor:${selfId}`, error: { code: 'RESET_REQUIRED', details: { head: '42' } } }));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(host.homes.homeOf('local-bot')).toBe('laptop');
+    expect(calls('/executions/claim')).toHaveLength(before);
+    expect(socket.send).toHaveBeenCalledWith(JSON.stringify({ type: 'subscribe', scope: `actor:${selfId}`, after: '42' }));
+  });
+
   it('publishes each companion\'s name on its own, so one broken avatar never blocks the others', async () => {
     const broken = '60000000-0000-4000-8000-0000000000b2';
     fixture.profiles = [{ id: 'broken-bot', displayName: 'Bad', avatar: 'cindy-media://missing', status: 'active' },
