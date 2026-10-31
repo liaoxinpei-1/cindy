@@ -27,6 +27,8 @@ it.each([
   ['Brazilian Portuguese in a European Portuguese UI', 'Você pode rodar o comando de novo, mas o arquivo não está atualizado.', 'pt-PT', false],
   ['Spanish in a Portuguese UI', 'El archivo de bloqueo está desactualizado y por eso falla la compilación.', 'pt-BR', true],
   ['Chinese in a French UI', '构建失败，因为锁文件已过期。', 'fr', true],
+  ['Chinese in a Classical Chinese UI', '构建失败，因为锁文件已过期。', 'zh-Hans-x-lzh', false],
+  ['English in a Classical Chinese UI', 'The build failed because the lockfile is out of date.', 'zh-Hant-x-lzh', true],
   // Same script, different language: the manual entry must stay.
   ['French in an English UI', 'Le fichier est introuvable.', 'en', true],
   ['Dutch in an English UI', 'Het bestand is niet gevonden op de server.', 'en', true],

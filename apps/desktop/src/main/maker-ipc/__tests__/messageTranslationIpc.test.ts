@@ -90,7 +90,7 @@ it('drops a result that arrives after the account changed', async () => {
 });
 
 it('rejects untrusted callers and malformed payloads before any model call', async () => {
-  await expect(h.handler!({}, { text: reply, locale: 'fr' })).rejects.toThrow();
+  await expect(h.handler!({}, { text: reply, locale: 'xx' })).rejects.toThrow();
   await expect(h.handler!({}, { text: reply, locale: 'zh-CN', sessionId: 'x' })).rejects.toThrow();
   h.trust.mockImplementationOnce(() => { throw new Error('untrusted'); });
   await expect(invoke()).rejects.toThrow('untrusted');

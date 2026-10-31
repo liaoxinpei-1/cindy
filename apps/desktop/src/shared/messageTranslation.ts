@@ -108,6 +108,8 @@ export function needsTranslation(markdown: string, locale: SupportedLocale): boo
   switch (locale) {
     case 'zh-CN':
     case 'zh-TW':
+    case 'zh-Hant-x-lzh':
+    case 'zh-Hans-x-lzh':
       // Han without kana is Chinese; either script variant stays readable.
       return !(counts.kana === 0 && share('han') >= 0.5);
     case 'ja':
@@ -138,4 +140,6 @@ export const MESSAGE_TRANSLATION_LANGUAGE_NAMES: Readonly<Record<SupportedLocale
   de: 'German',
   'pt-PT': 'European Portuguese',
   'pt-BR': 'Brazilian Portuguese',
+  'zh-Hant-x-lzh': 'Classical Chinese in Traditional characters',
+  'zh-Hans-x-lzh': 'Classical Chinese in Simplified characters',
 };
