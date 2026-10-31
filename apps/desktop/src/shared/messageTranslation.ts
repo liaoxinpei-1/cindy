@@ -39,19 +39,49 @@ function proseOf(markdown: string): string {
     .replace(/https?:\/\/\S+/g, ' ');
 }
 
-/**
- * Frequent English words that are not also common words in other Latin-script
- * languages (so no `a`, `in`, `is`, `no`, `on`, `die`, `was`).
- */
-const ENGLISH_MARKERS = new Set([
-  'the', 'and', 'of', 'to', 'that', 'this', 'with', 'for', 'you', 'your', 'are', 'be', 'been',
-  'it', 'its', 'not', 'have', 'has', 'will', 'can', 'from', 'by', 'would', 'should', 'there',
-  'which', 'what', 'they', 'we', 'these', 'those', 'because', 'if', 'or', 'but', 'when', 'then',
-]);
+type MarkerLanguage = 'en' | 'es' | 'fr' | 'de' | 'pt';
 
-function looksEnglish(latinWords: readonly string[]): boolean {
-  const hits = latinWords.filter((word) => ENGLISH_MARKERS.has(word.toLowerCase())).length;
-  return hits >= 2 && hits / latinWords.length >= 0.15;
+/**
+ * Frequent function words per Latin-script language, picked so that each word
+ * is not also a common word in the other listed languages (so no `a`, `in`,
+ * `is`, `no`, `que`, `para`, `die`/`was` for English, `es` for German).
+ */
+const LANGUAGE_MARKERS: Readonly<Record<MarkerLanguage, ReadonlySet<string>>> = {
+  en: new Set([
+    'the', 'and', 'of', 'to', 'that', 'this', 'with', 'for', 'you', 'your', 'are', 'be', 'been',
+    'it', 'its', 'not', 'have', 'has', 'will', 'can', 'from', 'by', 'would', 'should', 'there',
+    'which', 'what', 'they', 'we', 'these', 'those', 'because', 'if', 'or', 'but', 'when', 'then',
+  ]),
+  es: new Set([
+    'el', 'los', 'las', 'del', 'una', 'pero', 'muy', 'porque', 'hay', 'sus', 'al', 'lo', 'ya',
+    'esto', 'cuando', 'donde', 'puede', 'tiene', 'también', 'y', 'es', 'su', 'con', 'están',
+  ]),
+  fr: new Set([
+    'le', 'les', 'des', 'du', 'une', 'est', 'et', 'pas', 'pour', 'dans', 'avec', 'sur', 'ce',
+    'cette', 'vous', 'nous', 'il', 'elle', 'sont', 'mais', 'qui', 'au', 'aux', 'être',
+  ]),
+  de: new Set([
+    'der', 'das', 'und', 'ist', 'nicht', 'ein', 'eine', 'mit', 'für', 'auf', 'den', 'dem',
+    'sich', 'auch', 'sie', 'wird', 'werden', 'zu', 'von', 'oder', 'wenn', 'dass', 'kann', 'ich',
+  ]),
+  pt: new Set([
+    'não', 'o', 'um', 'uma', 'os', 'do', 'da', 'dos', 'das', 'em', 'ao', 'mas', 'muito', 'você',
+    'isso', 'quando', 'pode', 'tem', 'são', 'é', 'e', 'na', 'nas', 'pelo', 'também',
+  ]),
+};
+
+/**
+ * Whether the Latin words read as `language`: enough of its marker words, and
+ * more of them than of any other listed language (Spanish and Portuguese, or
+ * French and English, share vocabulary otherwise).
+ */
+function looksLike(language: MarkerLanguage, latinWords: readonly string[]): boolean {
+  const lower = latinWords.map((word) => word.toLowerCase());
+  const hitsOf = (lang: MarkerLanguage) => lower.filter((word) => LANGUAGE_MARKERS[lang].has(word)).length;
+  const hits = hitsOf(language);
+  if (hits < 2 || hits / latinWords.length < 0.15) return false;
+  return (Object.keys(LANGUAGE_MARKERS) as MarkerLanguage[])
+    .every((other) => other === language || hitsOf(other) < hits);
 }
 
 /**
@@ -86,7 +116,14 @@ export function needsTranslation(markdown: string, locale: SupportedLocale): boo
     case 'ko':
       return !(share('hangul') >= 0.5);
     case 'en':
-      return !(share('latin') >= 0.5 && looksEnglish(latinWords));
+    case 'es':
+    case 'fr':
+    case 'de':
+      return !(share('latin') >= 0.5 && looksLike(locale, latinWords));
+    case 'pt-PT':
+    case 'pt-BR':
+      // Either Portuguese variant stays readable, like the two Chinese scripts.
+      return !(share('latin') >= 0.5 && looksLike('pt', latinWords));
   }
 }
 
@@ -96,4 +133,9 @@ export const MESSAGE_TRANSLATION_LANGUAGE_NAMES: Readonly<Record<SupportedLocale
   en: 'English',
   ja: 'Japanese',
   ko: 'Korean',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  'pt-PT': 'European Portuguese',
+  'pt-BR': 'Brazilian Portuguese',
 };
